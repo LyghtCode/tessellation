@@ -1,8 +1,11 @@
 package org.tessellation.dag.snapshot
 
 import cats.data.NonEmptyList
-import cats.effect.Concurrent
+import cats.effect.{Async, Concurrent}
+import cats.syntax.functor._
+import cats.syntax.traverse._
 
+import org.tessellation.dag.domain.block.BlockReference
 import org.tessellation.ext.codecs.BinaryCodec
 import org.tessellation.kryo.KryoSerializer
 import org.tessellation.schema.address.Address
@@ -10,6 +13,7 @@ import org.tessellation.schema.balance.Balance
 import org.tessellation.schema.height.{Height, SubHeight}
 import org.tessellation.schema.peer.PeerId
 import org.tessellation.schema.transaction.RewardTransaction
+import org.tessellation.security.SecurityProvider
 import org.tessellation.security.hash.Hash
 import org.tessellation.security.hex.Hex
 
@@ -29,7 +33,16 @@ case class GlobalSnapshot(
   nextFacilitators: NonEmptyList[PeerId],
   info: GlobalSnapshotInfo,
   tips: GlobalSnapshotTips
-)
+) {
+
+  def activeTips[F[_]: Async: SecurityProvider: KryoSerializer]: F[Set[ActiveTip]] =
+    blocks.toList.traverse { blockAsActiveTip =>
+      BlockReference
+        .of(blockAsActiveTip.block)
+        .map(blockRef => ActiveTip(blockRef, blockAsActiveTip.usageCount, ordinal))
+    }.map(_.toSet.union(tips.remainedActive))
+
+}
 
 object GlobalSnapshot {
 

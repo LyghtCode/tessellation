@@ -23,7 +23,7 @@ object hash {
     def empty: Hash = Hash("")
   }
 
-  @derive(encoder, decoder, show, eqv)
+  @derive(encoder, decoder, show, eqv, order)
   @newtype
   case class ProofsHash(value: String)
 

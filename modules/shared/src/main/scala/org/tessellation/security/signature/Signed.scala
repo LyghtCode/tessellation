@@ -72,7 +72,7 @@ object Signed {
         proofsHash <- signed.proofs
           .sortBy(_.signature.value.value)
           .hashF
-          .map(hash => ProofsHash(hash.value)) // I guess that's the SOE
+          .map(hash => ProofsHash(hash.value))
         isValid <- signed.proofs
           .traverse(signature.verifySignatureProof(hash, _))
           .map(_.forall(identity))

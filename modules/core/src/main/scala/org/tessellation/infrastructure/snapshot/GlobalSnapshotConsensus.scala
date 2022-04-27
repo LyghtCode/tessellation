@@ -8,6 +8,7 @@ import cats.syntax.option._
 
 import org.tessellation.config.types.SnapshotConfig
 import org.tessellation.domain.snapshot.GlobalSnapshotStorage
+import org.tessellation.infrastructure.snapshot.processing.{BlockAcceptanceLogic, BlockAcceptanceManager}
 import org.tessellation.kryo.KryoSerializer
 import org.tessellation.schema.peer.PeerId
 import org.tessellation.sdk.config.types.HealthCheckConfig
@@ -28,7 +29,11 @@ object GlobalSnapshotConsensus {
     snapshotConfig: SnapshotConfig
   ): F[Consensus[F, GlobalSnapshotEvent, GlobalSnapshotKey, GlobalSnapshotArtifact]] =
     Consensus.make[F, GlobalSnapshotEvent, GlobalSnapshotKey, GlobalSnapshotArtifact](
-      GlobalSnapshotConsensusFunctions.make[F](globalSnapshotStorage, snapshotConfig.heightInterval),
+      GlobalSnapshotConsensusFunctions.make[F](
+        globalSnapshotStorage,
+        snapshotConfig.heightInterval,
+        BlockAcceptanceManager.make[F](BlockAcceptanceLogic.make[F])
+      ),
       gossip,
       selfId,
       keyPair,

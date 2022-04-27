@@ -20,7 +20,7 @@ case class DAGBlockData(transactions: Set[Signed[Transaction]])
 @derive(encoder, decoder, show)
 case class DAGBlock(transactions: Set[Signed[Transaction]], parent: NonEmptyList[BlockReference])
     extends Fiber[DAGBlockReference, DAGBlockData] {
-  val height: Height = Height(parent.minimum.height.coerce + 1L)
+  val height: Height = Height(parent.maximum.height.coerce + 1L)
 
   def reference = DAGBlockReference(parent)
   def data = DAGBlockData(transactions)

@@ -43,7 +43,7 @@ object balance {
     }
 
     def minus(that: Amount): Either[BalanceOutOfRange, Balance] =
-      NonNegLong.from(value.value - that.value.value).bimap(BalanceOutOfRange, Balance(_))
+      NonNegLong.from(value.value - that.value.value).bimap(BalanceOutOfRange(_), Balance(_))
   }
 
   object Balance {
@@ -97,5 +97,6 @@ object balance {
 
   }
 
+  @derive(eqv, show)
   case class BalanceOutOfRange(msg: String) extends Throwable(msg)
 }
