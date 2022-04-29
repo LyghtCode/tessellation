@@ -23,10 +23,10 @@ import org.tessellation.dag.l1.domain.consensus.block.Validator.{canStartOwnCons
 import org.tessellation.dag.l1.domain.consensus.block.{BlockConsensusCell, BlockConsensusContext, BlockConsensusInput}
 import org.tessellation.dag.l1.http.p2p.P2PClient
 import org.tessellation.dag.l1.modules._
-import org.tessellation.ext.crypto._
 import org.tessellation.kernel.Cell.NullTerminal
 import org.tessellation.kernel.{CellError, Ω}
 import org.tessellation.kryo.KryoSerializer
+import org.tessellation.schema.height.Height
 import org.tessellation.schema.peer.PeerId
 import org.tessellation.security.SecurityProvider
 import org.tessellation.security.signature.Signed
@@ -41,6 +41,7 @@ class StateChannel[F[_]: Async: KryoSerializer: SecurityProvider: Random](
   programs: Programs[F],
   queues: Queues[F],
   selfId: PeerId,
+  semaphores: Semaphores[F],
   services: Services[F],
   storages: Storages[F],
   validators: Validators[F]
@@ -67,7 +68,8 @@ class StateChannel[F[_]: Async: KryoSerializer: SecurityProvider: Random](
 
   private val ownRoundTriggerInput: Stream[F, OwnerBlockConsensusInput] = Stream
     .awakeEvery(5.seconds)
-    .evalFilter { _ =>
+    .evalTap(_ => semaphores.blockCreation.acquire)
+    .evalMap { _ =>
       canStartOwnConsensus(
         storages.consensus,
         storages.node,
@@ -77,12 +79,14 @@ class StateChannel[F[_]: Async: KryoSerializer: SecurityProvider: Random](
         appConfig.consensus.tipsCount
       )
     }
+    .evalTap(_ => semaphores.blockCreation.release)
+    .filter(identity)
     .as(OwnRoundTrigger)
 
   private val ownerBlockConsensusInputs: Stream[F, OwnerBlockConsensusInput] =
     inspectionTriggerInput.merge(ownRoundTriggerInput)
 
-  private val peerBlockConsensusInputs: Stream[F, PeerBlockConsensusInput] = Stream
+  private val peerBlockConsensusInputs: Stream[F, PeerBlockConsensusInput] = Stream // TODO: should I block it?
     .fromQueueUnterminated(queues.peerBlockConsensusInput)
     .evalFilter(isPeerInputValid(_))
     .map(_.value)
@@ -134,9 +138,17 @@ class StateChannel[F[_]: Async: KryoSerializer: SecurityProvider: Random](
     }
 
   private val storeBlock: Pipe[F, FinalBlock, Unit] =
-    _.evalMap { fb =>
-      storages.block.store(fb.hashedBlock).handleErrorWith(e => logger.debug(e)("Block storing failed."))
-    }
+    _.evalTap(_ => semaphores.blockStoring.acquire).evalMap { fb =>
+      for {
+        lastSnapshotHeight <- storages.lastGlobalSnapshotStorage.getHeight.map(_.getOrElse(Height.MinValue))
+        _ <- if (lastSnapshotHeight.value < fb.hashedBlock.height.value)
+          storages.block.store(fb.hashedBlock).handleErrorWith(e => logger.debug(e)("Block storing failed."))
+        else
+          logger.debug(
+            s"Block can't be stored! Block height not above last snapshot height! block:${fb.hashedBlock.height} <= snapshot: $lastSnapshotHeight"
+          )
+      } yield ()
+    }.evalTap(_ => semaphores.blockStoring.release)
 
   private val sendBlockToL0: Pipe[F, FinalBlock, Unit] =
     _.evalMap { fb =>
@@ -159,6 +171,7 @@ class StateChannel[F[_]: Async: KryoSerializer: SecurityProvider: Random](
 
   private val blockAcceptance: Stream[F, Unit] = Stream
     .awakeEvery(1.seconds)
+    .evalTap(_ => semaphores.blockAcceptance.acquire)
     .evalMap(_ => storages.block.getWaiting)
     .evalTap { awaiting =>
       if (awaiting.nonEmpty) logger.debug(s"Pulled following blocks for acceptance ${awaiting.keySet}")
@@ -177,16 +190,21 @@ class StateChannel[F[_]: Async: KryoSerializer: SecurityProvider: Random](
         }
         .void
     )
+    .evalTap(_ => semaphores.blockAcceptance.release)
 
   private val globalSnapshotProcessing: Stream[F, Unit] = Stream
     .awakeEvery(10.seconds)
     .evalMap(_ => services.l0.pullGlobalSnapshots)
     .flatMap(snapshots => Stream.fromIterator(snapshots.iterator, 1))
-    .evalMap { snapshot =>
-      snapshot.hashF.flatMap { hash =>
-        logger.info(s"Pulled following global snapshot: ${snapshot.ordinal.show} ${hash.show}")
-      }
-    }
+    .evalTap(snapshot => logger.info(s"Pulled following global snapshot: $snapshot"))
+    .evalTap(
+      _ => semaphores.blockAcceptance.acquire >> semaphores.blockCreation.acquire >> semaphores.blockStoring.acquire
+    )
+    .evalMap(programs.snapshotProcessor.process)
+    .evalTap(
+      _ => semaphores.blockAcceptance.release >> semaphores.blockCreation.release >> semaphores.blockStoring.release
+    )
+    .evalMap(result => logger.info(s"Snapshot processing result: $result"))
 
   private val blockConsensus: Stream[F, Unit] =
     blockConsensusInputs

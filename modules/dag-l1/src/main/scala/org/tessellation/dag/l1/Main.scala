@@ -9,8 +9,7 @@ import org.tessellation.dag.l1.http.p2p.P2PClient
 import org.tessellation.dag.l1.infrastructure.block.rumor.handler.blockRumorHandler
 import org.tessellation.dag.l1.infrastructure.db.Database
 import org.tessellation.dag.l1.modules._
-import org.tessellation.dag.snapshot.SnapshotOrdinal
-import org.tessellation.dag.{dagSharedKryoRegistrar, _}
+import org.tessellation.dag.{DagSharedKryoRegistrationIdRange, dagSharedKryoRegistrar}
 import org.tessellation.ext.cats.effect.ResourceIO
 import org.tessellation.ext.kryo._
 import org.tessellation.schema.node.NodeState
@@ -39,7 +38,8 @@ object Main extends TessellationIOApp[Run]("", "DAG L1 node", version = BuildInf
     Database.forAsync[IO](cfg.db).flatMap { implicit database =>
       for {
         queues <- Queues.make[IO](sdkQueues).asResource
-        storages <- Storages.make[IO](sdkStorages, method.l0Peer, SnapshotOrdinal.MinValue).asResource
+        semaphores <- Semaphores.make[IO].asResource
+        storages <- Storages.make[IO](sdkStorages, method.l0Peer).asResource
         validators = Validators.make[IO](storages, cfg.blockValidator)
         p2pClient = P2PClient.make(sdkP2PClient, sdkResources.client)
         services = Services.make[IO](storages, validators, sdkServices, p2pClient)
@@ -64,6 +64,7 @@ object Main extends TessellationIOApp[Run]("", "DAG L1 node", version = BuildInf
           programs,
           queues,
           nodeId,
+          semaphores,
           services,
           storages,
           validators
