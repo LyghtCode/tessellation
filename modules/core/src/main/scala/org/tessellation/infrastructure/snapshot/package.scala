@@ -11,12 +11,13 @@ import org.tessellation.sdk.infrastructure.consensus.ConsensusStorage
 import org.tessellation.security.signature.Signed
 
 import eu.timepit.refined.auto._
+import org.tessellation.domain.aci.StateChannelOutput
 
 package object snapshot {
 
   type DAGEvent = Either[Signed[DAGBlock], SnapshotTrigger]
 
-  type StateChannelEvent = StateChannelGistedOutput[StateChannelSnapshot]
+  type StateChannelEvent = StateChannelOutput
 
   type GlobalSnapshotEvent = Either[StateChannelEvent, DAGEvent]
 

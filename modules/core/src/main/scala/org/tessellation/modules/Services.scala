@@ -34,7 +34,6 @@ object Services {
   ): F[Services[F]] =
     for {
       metrics <- Metrics.make[F]
-      stateChannelRunner <- StateChannelRunner.make[F](queues.stateChannelOutput)
       consensus <- GlobalSnapshotConsensus
         .make[F](
           sdkServices.gossip,
@@ -52,7 +51,6 @@ object Services {
         session = sdkServices.session,
         metrics = metrics,
         gossip = sdkServices.gossip,
-        stateChannelRunner = stateChannelRunner,
         consensus = consensus,
         dag = dagService
       ) {}
@@ -63,7 +61,6 @@ sealed abstract class Services[F[_]] private (
   val session: Session[F],
   val metrics: Metrics[F],
   val gossip: Gossip[F],
-  val stateChannelRunner: StateChannelRunner[F],
   val consensus: Consensus[F, GlobalSnapshotEvent, GlobalSnapshotKey, GlobalSnapshotArtifact],
   val dag: DAGService[F]
 )

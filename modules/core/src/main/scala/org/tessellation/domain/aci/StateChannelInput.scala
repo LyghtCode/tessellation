@@ -1,5 +1,8 @@
 package org.tessellation.domain.aci
 
-import org.tessellation.schema.address.Address
+import org.tessellation.security.hash.Hash
+import derevo.derive
+import derevo.circe.magnolia.decoder
 
-case class StateChannelInput(address: Address, bytes: Array[Byte])
+@derive(decoder)
+case class StateChannelInput(lastSnapshotHash: Hash, bytes: Array[Byte])

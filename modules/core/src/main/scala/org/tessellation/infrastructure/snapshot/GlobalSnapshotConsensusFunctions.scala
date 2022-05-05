@@ -34,6 +34,7 @@ import eu.timepit.refined.auto._
 import eu.timepit.refined.types.numeric.NonNegLong
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import shapeless.Typeable
+import org.tessellation.domain.aci.StateChannelOutput
 
 trait GlobalSnapshotConsensusFunctions[F[_]]
     extends ConsensusFunctions[F, GlobalSnapshotEvent, GlobalSnapshotKey, GlobalSnapshotArtifact] {}
@@ -144,14 +145,14 @@ object GlobalSnapshotConsensusFunctions {
       events: List[StateChannelEvent]
     ): (Map[Address, NonEmptyList[StateChannelSnapshotBinary]], Set[GlobalSnapshotEvent]) = {
       val lshToSnapshot: Map[(Address, Hash), StateChannelEvent] = events.map { e =>
-        (e.address, e.outputGist.lastSnapshotHash) -> e
+        (e.address, e.input.value.lastSnapshotHash) -> e
       }.foldLeft(Map.empty[(Address, Hash), StateChannelEvent]) { (acc, entry) =>
         entry match {
           case (k, newEvent) =>
             acc.updatedWith(k) { maybeEvent =>
               maybeEvent
                 .fold(newEvent) { event =>
-                  if (Hash.fromBytes(event.outputBinary) < Hash.fromBytes(newEvent.outputBinary))
+                  if (Hash.fromBytes(event.input.value.bytes) < Hash.fromBytes(newEvent.input.value.bytes))
                     event
                   else
                     newEvent
@@ -177,7 +178,7 @@ object GlobalSnapshotConsensusFunctions {
                 .map { go =>
                   for {
                     head <- Eval.now(go)
-                    tail <- unfold(Hash.fromBytes(go.outputBinary))
+                    tail <- unfold(Hash.fromBytes(go.input.value.bytes))
                   } yield head :: tail
                 }
                 .getOrElse(Eval.now(List.empty))
@@ -185,7 +186,7 @@ object GlobalSnapshotConsensusFunctions {
             unfold(initLsh).value.toNel.map(
               nel =>
                 address -> nel
-                  .map(event => StateChannelSnapshotBinary(event.outputGist.lastSnapshotHash, event.outputBinary))
+                  .map(event => StateChannelSnapshotBinary(event.input.value.lastSnapshotHash, event.input.value.bytes))
                   .reverse
             )
         }

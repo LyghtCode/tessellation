@@ -21,7 +21,6 @@ object GlobalSnapshotEventsPublisherDaemon {
   ): Daemon[F] = Daemon.spawn {
     Stream
       .fromQueueUnterminated(stateChannelOutputs)
-      .mapFilter(_.takeGistedOutputOf[StateChannelSnapshot])
       .map(_.asLeft[DAGEvent])
       .merge(
         dagEvents
